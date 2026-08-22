@@ -1,0 +1,68 @@
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Environment Variables & Secrets
+.env
+.env.*
+!.env.example
+*.env
+
+# Python & ML
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+ml-service/models/*.joblib
+ml-service/models/*.pkl
+
+# Frontend build output
+frontend/dist/
+frontend/build/
+.vite/
+
+# Logs & temporary files
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# OS Files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE & Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
