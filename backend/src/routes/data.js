@@ -6,9 +6,25 @@ const fs = require('fs');
 const EnergyRecord = require('../models/EnergyRecord');
 const Project = require('../models/Project');
 const { protect } = require('../middleware/auth');
+const { requireOwnedProject } = require('../middleware/ownership');
 const demoDataService = require('../services/demoDataService');
 
-const upload = multer({ dest: 'uploads/' });
+const MAX_ROWS = 100000;
+const upload = multer({
+    dest: 'uploads/',
+    limits: { fileSize: 10 * 1024 * 1024, files: 1 },
+    fileFilter: (req, file, cb) => {
+        const ok = /\.(csv|txt)$/i.test(file.originalname) && /(csv|text|excel|octet-stream)/i.test(file.mimetype);
+        cb(ok ? null : Object.assign(new Error('Only CSV files are accepted'), { status: 400 }), ok);
+    },
+});
+
+// CSV values arrive as strings: Boolean("false") is true, so parse booleans explicitly.
+const toBool = (v, fallback = true) => {
+    if (v === undefined || v === null || v === '') return fallback;
+    if (typeof v === 'boolean') return v;
+    return !/^(false|0|no|off)$/i.test(String(v).trim());
+};
 
 router.use(protect);
 
@@ -34,6 +50,10 @@ router.post('/upload/:projectId', upload.single('file'), async (req, res) => {
         );
 
         for await (const row of parser) {
+            if (records.length >= MAX_ROWS) {
+                fs.unlinkSync(req.file.path);
+                return res.status(413).json({ message: `CSV has more than ${MAX_ROWS} rows` });
+            }
             if (!columns.length) {
                 columns = Object.keys(row);
                 requiredFields.forEach(f => { if (!columns.includes(f)) missingFields.add(f); });
@@ -57,7 +77,7 @@ router.post('/upload/:projectId', upload.single('file'), async (req, res) => {
                 chargeRate: Number(row.chargeRate || row.charge_rate || 0),
                 dischargeRate: Number(row.dischargeRate || row.discharge_rate || 0),
                 energyDemand: Number(row.energyDemand || row.energy_demand || row.demand || 0),
-                gridAvailability: row.gridAvailability !== undefined ? Boolean(row.gridAvailability) : true,
+                gridAvailability: toBool(row.gridAvailability),
                 gridPrice: Number(row.gridPrice || row.grid_price || 0.1)
             });
         }
@@ -93,9 +113,9 @@ router.post('/demo', async (req, res) => {
 });
 
 // GET /api/data/stats/:projectId — Comprehensive dataset statistics
-router.get('/stats/:projectId', async (req, res) => {
+router.get('/stats/:projectId', requireOwnedProject(), async (req, res) => {
     try {
-        const projectId = req.params.projectId;
+        const projectId = req.project._id.toString();
 
         // Use MongoDB aggregation for efficient stats
         const [aggResult] = await EnergyRecord.aggregate([

@@ -4,6 +4,7 @@ const { OpenAI } = require('openai');
 const EnergyRecord = require('../models/EnergyRecord');
 const Forecast = require('../models/Forecast');
 const { protect } = require('../middleware/auth');
+const { findOwnedProject } = require('../middleware/ownership');
 
 router.use(protect);
 
@@ -11,14 +12,22 @@ router.post('/chat', async (req, res) => {
     try {
         const { message, projectId, history = [] } = req.body;
 
-        if (!message) return res.status(400).json({ message: 'No message provided' });
+        if (typeof message !== 'string' || !message.trim()) return res.status(400).json({ message: 'No message provided' });
+        if (message.length > 4000) return res.status(400).json({ message: 'Message too long' });
+        if (!Array.isArray(history)) return res.status(400).json({ message: 'history must be an array' });
 
-        // Fetch live context
-        const latestRecord = projectId
-            ? await EnergyRecord.findOne({ projectId }).sort({ timestamp: -1 })
+        // Only ever put the caller's OWN project data into the prompt.
+        let project = null;
+        if (projectId) {
+            project = await findOwnedProject(req, projectId);
+            if (!project) return res.status(404).json({ message: 'Project not found' });
+        }
+
+        const latestRecord = project
+            ? await EnergyRecord.findOne({ projectId: project._id }).sort({ timestamp: -1 })
             : null;
-        const latestForecast = projectId
-            ? await Forecast.findOne({ projectId }).sort({ generatedAt: -1 })
+        const latestForecast = project
+            ? await Forecast.findOne({ projectId: project._id }).sort({ generatedAt: -1 })
             : null;
 
         // Build rich system prompt with real data
@@ -60,9 +69,9 @@ router.post('/chat', async (req, res) => {
         const chatMessages = [
             { role: 'system', content: systemContext },
             // Include last 6 history turns for context
-            ...history.slice(-6).map(h => ({
+            ...history.slice(-6).filter(h => h && typeof h.content === 'string').map(h => ({
                 role: h.role === 'ai' ? 'assistant' : 'user',
-                content: h.content
+                content: h.content.slice(0, 4000)
             })),
             { role: 'user', content: message }
         ];

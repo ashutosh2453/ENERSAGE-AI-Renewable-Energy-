@@ -2,6 +2,9 @@ const express = require('express');
 const router = express.Router();
 const Alert = require('../models/Alert');
 const { protect } = require('../middleware/auth');
+const Project = require('../models/Project');
+const { requireOwnedProject } = require('../middleware/ownership');
+const mongoose = require('mongoose');
 
 router.use(protect);
 
@@ -43,27 +46,31 @@ const getDefaultSampleAlerts = (projectId) => [
     }
 ];
 
-router.get('/:projectId', async (req, res) => {
+router.get('/:projectId', requireOwnedProject(), async (req, res, next) => {
     try {
-        let alerts = await Alert.find({ projectId: req.params.projectId, resolved: false }).sort({ timestamp: -1 });
-        
-        // If no alerts exist for this project, auto-generate sample alerts
+        const projectId = req.project._id;
+        let alerts = await Alert.find({ projectId, resolved: false }).sort({ timestamp: -1 });
+
+        // If no alerts exist for this (owned) project, auto-generate sample alerts
         if (alerts.length === 0) {
-            const samples = getDefaultSampleAlerts(req.params.projectId);
-            await Alert.insertMany(samples);
-            alerts = await Alert.find({ projectId: req.params.projectId, resolved: false }).sort({ timestamp: -1 });
+            await Alert.insertMany(getDefaultSampleAlerts(projectId));
+            alerts = await Alert.find({ projectId, resolved: false }).sort({ timestamp: -1 });
         }
 
         res.json(alerts);
-    } catch (err) { res.status(500).json({ message: err.message }); }
+    } catch (err) { next(err); }
 });
 
-router.patch('/:alertId/resolve', async (req, res) => {
+router.patch('/:alertId/resolve', async (req, res, next) => {
     try {
-        const alert = await Alert.findByIdAndUpdate(req.params.alertId, { resolved: true, resolvedAt: new Date() }, { new: true });
-        if (!alert) return res.status(404).json({ message: 'Alert not found' });
+        if (!mongoose.Types.ObjectId.isValid(req.params.alertId)) return res.status(404).json({ message: 'Alert not found' });
+        const existing = await Alert.findById(req.params.alertId);
+        // Only the owner of the alert's project may resolve it.
+        const owned = existing && await Project.exists({ _id: existing.projectId, owner: req.user.userId });
+        if (!owned) return res.status(404).json({ message: 'Alert not found' });
+        const alert = await Alert.findByIdAndUpdate(existing._id, { resolved: true, resolvedAt: new Date() }, { new: true });
         res.json(alert);
-    } catch (err) { res.status(500).json({ message: err.message }); }
+    } catch (err) { next(err); }
 });
 
 module.exports = router;

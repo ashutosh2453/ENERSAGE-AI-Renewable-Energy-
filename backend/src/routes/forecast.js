@@ -5,6 +5,7 @@ const Forecast = require('../models/Forecast');
 const EnergyRecord = require('../models/EnergyRecord');
 const axios = require('axios');
 const { protect } = require('../middleware/auth');
+const { requireOwnedProject } = require('../middleware/ownership');
 const alertService = require('../services/alertService');
 
 router.use(protect);
@@ -57,9 +58,9 @@ router.post('/train/:projectId', async (req, res) => {
 });
 
 // GET /api/forecast/:projectId — Get latest stored forecast
-router.get('/:projectId', async (req, res) => {
+router.get('/:projectId', requireOwnedProject(), async (req, res) => {
     try {
-        const forecast = await Forecast.findOne({ projectId: req.params.projectId })
+        const forecast = await Forecast.findOne({ projectId: req.project._id })
             .sort({ generatedAt: -1 });
         if (!forecast) return res.status(404).json({ message: 'No forecast found. Generate one first.' });
         res.json(forecast);
