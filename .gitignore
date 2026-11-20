@@ -66,3 +66,6 @@ desktop.ini
 *.swp
 *.swo
 *~
+
+# Uploaded CSVs are temporary
+backend/uploads/

@@ -132,6 +132,32 @@ renew-ai/
 
 ---
 
+## 🛡️ Security & Testing
+
+The backend enforces **per-user tenant isolation** on every project-scoped route. A shared `requireOwnedProject` / `findOwnedProject` helper loads a project only if it belongs to the authenticated user, so guessing another project's id returns `404`.
+
+Hardening added on 2026-11-20:
+
+| Issue | Fix |
+|---|---|
+| `GET /api/data/stats/:id`, `GET /api/forecast/:id` and `GET /api/alerts/:id` returned **any** user's data (IDOR) | Ownership check on every project-scoped route |
+| `GET /api/alerts/:id` inserted sample alerts into other users' projects | Only for projects you own |
+| `PATCH /api/alerts/:id/resolve` let anyone resolve anyone's alerts | Checks that the alert's project belongs to the caller |
+| `POST /api/copilot/chat` put another user's telemetry into the AI prompt | Loads only your own project; validates `message` and `history` |
+| `Authorization: Bearer` with no token sent two responses ("headers already sent") | Single 401 path; JWT algorithm pinned to HS256 |
+| Login/register accepted objects such as `{"$ne": null}` as email (NoSQL injection) | String validation and Mongoose `sanitizeFilter`; emails normalised to lowercase; minimum password length 8 |
+| Error handler returned stack traces unless `NODE_ENV=production` | Stack traces and internal messages only shown in `development` |
+| CSV upload: unlimited size, any file type, `Boolean("false") === true` | 10 MB / CSV-only limits, a 100k-row cap, proper boolean parsing |
+| Missing or placeholder `JWT_SECRET` failed at login time | The server refuses to start without a secret of at least 16 characters |
+
+```bash
+cd backend
+npm test        # 12 security regression tests on an in-memory MongoDB
+npm run test:e2e  # the original end-to-end health check against a running stack
+```
+
+Against the original code, 10 of the 12 tests fail. They run in GitHub Actions on Node 20 and 22. `src/app.js` now exports `createApp()`, so the API can be tested without opening a port; `server.js` only starts it.
+
 ## 🔐 Environment Variables
 
 ### `backend/.env`
